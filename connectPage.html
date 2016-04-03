@@ -2,16 +2,39 @@
 <head>
     <title>Connect</title>
     <style>
+        html,body{
+            height:100%;
+        }
         .errorMessage{
             color: red;
             border-width:1px;
         }
+        .archiveMailListEntry{
+            padding:5px;
+            cursor:pointer;
+        }
+        .selectedMailListEntry{
+            padding:5px;
+            background-color:lightskyblue;
+            cursor:pointer;
+        }
+        .recentArchiveListEntry{
+            color:blue;
+            text-decoration:underline;
+            cursor:pointer;
+        }
+        a{
+            color:blue;
+            text-decoration:underline;
+            cursor:pointer;
+        }
     </style>
     <script src="NDAarchives.js"></script>
     <script>
-        var sections = ["loginSection", "archiveSelectSection"];
+        var sections = ["loginSection", "archiveSelectSection", "archiveEncryptedSection"];
         var crownmailSuffix = "@crownmail.grc";
-        var recentArchives = {"bryce81":true};
+        var recentArchives = { "bryce81": true };
+        var selectedMailEntry = undefined;
         function showSection(sectionName)
         {
             sections.forEach(function (hideSectionName)
@@ -25,17 +48,9 @@
         function onLoad()
         {
             showSection("loginSection");
-
-            var recentlyAccessedSection = document.getElementById("recentlyAccessedSection");
-            for(var theArchive in recentArchives)
-            {
-                var newChild = document.createElement("A");
-                newChild.innerText = theArchive;
-                newChild.onclick = function () { doShowArchive(theArchive); };
-                recentlyAccessedSection.appendChild(newChild);
-            };
         }
-        function doConnect()
+
+        function doLogin()
         {
             var usernameField = document.getElementById("usernameField");
             var passwordField = document.getElementById("passwordField");
@@ -46,7 +61,7 @@
                 if(passwordField.value === "12345")
                 {
                     //window.location.href = "bryceArchive.html";
-                    showSection("archiveSelectSection");
+                    logInAsBryce();
                 }
             }
             else
@@ -54,6 +69,26 @@
                 passwordField.value = "";
             }
         }
+
+        function logInAsBryce()
+        {
+            showSection("archiveSelectSection");
+
+            var recentlyAccessedSection = document.getElementById("recentlyAccessedSection");
+            removeAllChildren(recentlyAccessedSection);
+            for (var theArchive in recentArchives)
+            {
+                (function(theArchive)
+                {
+                    var newChild = document.createElement("DIV");
+                    newChild.innerText = theArchive;
+                    newChild.onclick = function () { doShowArchive(theArchive); };
+                    newChild.className = "recentArchiveListEntry";
+                    recentlyAccessedSection.appendChild(newChild);
+                })(theArchive);
+            };
+        }
+
         function doShowArchive(archiveName)
         {
             var selectedArchive = NDAarchives[archiveName];
@@ -69,27 +104,63 @@
             }
             else
             {
+                // entered a valid archive
+                recentArchives[archiveName] = true;
                 document.getElementById("noSuchArchiveError").style.display = "none";
                 showSection("archiveEncryptedSection");
                 document.getElementById("archiveViewMailTitle").innerText = archiveName + crownmailSuffix;
                 var listContainer = document.getElementById("archiveViewListSection");
+                removeAllChildren(listContainer);
                 selectedArchive.forEach(function (archivedMail)
                 {
-                    var newChild = document.createElement("A");
-                    newChild.innerText = archivedMail.sender + " (" + archivedMail.dateTime + ")";
-                    newChild.onclick = function () { showArchivedMail(archivedMail); };
+                    var newChild = document.createElement("DIV");
+
+                    var subjectLine = document.createElement("SPAN");
+                    subjectLine.innerText = archivedMail.subject;
+                    newChild.appendChild(subjectLine);
+                    newChild.appendChild(document.createElement("BR"));
+                    var senderLine = document.createElement("SPAN");
+                    senderLine.innerText = archivedMail.sender + " (" + archivedMail.dateTime + ")";
+                    newChild.appendChild(senderLine);
+
+                    newChild.onclick = function () { selectMailEntry(this); };
+                    newChild.className = "archiveMailListEntry"
+                    newChild.mailData = archivedMail;
                     listContainer.appendChild(newChild);
                 });
+
+                selectMailEntry(listContainer.firstChild);
             }
         }
+
+        function removeAllChildren(element)
+        {
+            while (element.firstChild !== null)
+            {
+                element.removeChild(element.firstChild);
+            }
+        }
+
+        function selectMailEntry(element)
+        {
+            if(selectedMailEntry !== undefined)
+                selectedMailEntry.className = "archiveMailListEntry";
+            element.className = "selectedMailListEntry";
+            selectedMailEntry = element;
+            showArchivedMail(element.mailData);
+        }
+
         function showArchivedMail(mail)
         {
-            var mailView = document.getElementById("archiveMailViewSection");
+            var mailView = document.getElementById("archiveMailTextView");
             mailView.innerText = mail.text;
         }
     </script>
 </head>
 <body onload="onLoad()">
+    <div style="float:right; width:300px; background-color:darkred; color:yellow; height:100%;">
+        dscrypt
+    </div>
     <p>
         == chairon.crownmail.grc ==<br>
         Internal CrownMail archive server<br>
@@ -100,7 +171,8 @@
         <br>
         Password:<input type="password" id="passwordField"/>
         <br>
-        <button onclick="doConnect()">Connect</button>
+        <button onclick="doLogin()">Connect</button>
+        <button onclick="logInAsBryce()">Cheat: Bryce</button>
         <p>
             <a href="">Forgotten password</a>
         </p>
@@ -126,10 +198,21 @@
     </div>
     <div id="archiveEncryptedSection">
         <p>
-            Viewing archives for <span id="archiveViewMailTitle"></span>:
+            <a onclick="logInAsBryce();">&lt; Back</a><br>
+            ARCHIVED MAIL FOR
+            <span id="archiveViewMailTitle"></span>:
         </p>
-        <div id="archiveViewListSection"></div>
-        <div id="archiveMailViewSection"></div>
+        <p>
+            This account is level 2 encrypted. Enter password: <input type="text">
+        </p>
+        <table style="border-top:double; height:100%; left:0; right:0">
+            <tr>
+                <td style="width:300px; vertical-align:top; border-right:solid; border-width:1px; background-color:lightgrey;" id="archiveViewListSection"></td>
+                <td style="vertical-align:top;">
+                    <div id="archiveMailTextView"></div>
+                </td>
+            </tr>
+        </table>
     </div>
 </body>
 </html>
