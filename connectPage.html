@@ -1,0 +1,135 @@
+﻿<html>
+<head>
+    <title>Connect</title>
+    <style>
+        .errorMessage{
+            color: red;
+            border-width:1px;
+        }
+    </style>
+    <script src="NDAarchives.js"></script>
+    <script>
+        var sections = ["loginSection", "archiveSelectSection"];
+        var crownmailSuffix = "@crownmail.grc";
+        var recentArchives = {"bryce81":true};
+        function showSection(sectionName)
+        {
+            sections.forEach(function (hideSectionName)
+            {
+                if(hideSectionName === sectionName)
+                    document.getElementById(hideSectionName).style.display = "block";
+                else
+                    document.getElementById(hideSectionName).style.display = "none";
+            });
+        }
+        function onLoad()
+        {
+            showSection("loginSection");
+
+            var recentlyAccessedSection = document.getElementById("recentlyAccessedSection");
+            for(var theArchive in recentArchives)
+            {
+                var newChild = document.createElement("A");
+                newChild.innerText = theArchive;
+                newChild.onclick = function () { doShowArchive(theArchive); };
+                recentlyAccessedSection.appendChild(newChild);
+            };
+        }
+        function doConnect()
+        {
+            var usernameField = document.getElementById("usernameField");
+            var passwordField = document.getElementById("passwordField");
+            if(usernameField.value === "b" ||
+                usernameField.value === "bryce81" ||
+                usernameField.value === "bryce81"+crownmailSuffix)
+            {
+                if(passwordField.value === "12345")
+                {
+                    //window.location.href = "bryceArchive.html";
+                    showSection("archiveSelectSection");
+                }
+            }
+            else
+            {
+                passwordField.value = "";
+            }
+        }
+        function doShowArchive(archiveName)
+        {
+            var selectedArchive = NDAarchives[archiveName];
+            if(selectedArchive === undefined && archiveName.endsWith(crownmailSuffix))
+            {
+                selectedArchive = NDAarchives[archiveName.substr(0, archiveName.length-crownmailSuffix.length)];
+            }
+
+            if(selectedArchive === undefined)
+            {
+                document.getElementById("noSuchArchiveError").style.display = "inline";
+                document.getElementById('archiveSelectField').value = "";
+            }
+            else
+            {
+                document.getElementById("noSuchArchiveError").style.display = "none";
+                showSection("archiveEncryptedSection");
+                document.getElementById("archiveViewMailTitle").innerText = archiveName + crownmailSuffix;
+                var listContainer = document.getElementById("archiveViewListSection");
+                selectedArchive.forEach(function (archivedMail)
+                {
+                    var newChild = document.createElement("A");
+                    newChild.innerText = archivedMail.sender + " (" + archivedMail.dateTime + ")";
+                    newChild.onclick = function () { showArchivedMail(archivedMail); };
+                    listContainer.appendChild(newChild);
+                });
+            }
+        }
+        function showArchivedMail(mail)
+        {
+            var mailView = document.getElementById("archiveMailViewSection");
+            mailView.innerText = mail.text;
+        }
+    </script>
+</head>
+<body onload="onLoad()">
+    <p>
+        == chairon.crownmail.grc ==<br>
+        Internal CrownMail archive server<br>
+        Unauthorized access STRICTLY PROHIBITED
+    </p>
+    <div id="loginSection">
+        Username:<input type="text" id="usernameField"/>
+        <br>
+        Password:<input type="password" id="passwordField"/>
+        <br>
+        <button onclick="doConnect()">Connect</button>
+        <p>
+            <a href="">Forgotten password</a>
+        </p>
+    </div>
+    <div id="archiveSelectSection">
+        <p>Welcome Bryce Harding.</p>
+        
+        <p>
+            View archives for what crownmail address?
+            <p class="errorMessage" style="display:none" id="noSuchArchiveError">
+                Error: No such archive.
+            </p>
+            <br>
+            <input type="text" id="archiveSelectField" />
+            <br>
+            <button onclick="doShowArchive(document.getElementById('archiveSelectField').value)">View</button>
+        </p>
+        <p>
+            Recently accessed:
+            <br>
+            <div id="recentlyAccessedSection"></div>
+        </p>
+    </div>
+    <div id="archiveEncryptedSection">
+        <p>
+            Viewing archives for <span id="archiveViewMailTitle"></span>:
+        </p>
+        <div id="archiveViewListSection"></div>
+        <div id="archiveMailViewSection"></div>
+    </div>
+</body>
+</html>
