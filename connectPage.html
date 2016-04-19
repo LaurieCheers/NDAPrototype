@@ -23,18 +23,44 @@
             text-decoration:underline;
             cursor:pointer;
         }
+        .decrypted{
+            color:black;
+        }
+        .decryptWord{
+            color:#AAAAAA;
+        }
+        .decryptPattern0{
+            color:#0000FF;
+        }
+        .decryptPattern1{
+            color:#CC00AA;
+        }
+        .decryptPattern2{
+            color:red;
+        }
+        .decryptPattern3{
+            color:cyan;
+        }
         a{
             color:blue;
             text-decoration:underline;
             cursor:pointer;
         }
+        h1{
+            font-family:Verdana;
+        }
     </style>
     <script src="NDAarchives.js"></script>
+    <script src="decoder_dictionary.js"></script>
+    <script src="decoder_dictionary_util.js"></script>
     <script>
         var sections = ["loginSection", "archiveSelectSection", "archiveEncryptedSection"];
         var crownmailSuffix = "@crownmail.grc";
         var recentArchives = { "bryce81": true };
         var selectedMailEntry = undefined;
+        var selectedKeyPair = undefined;
+        var clearDecryptionKey = "??????????????????????????";
+
         function showSection(sectionName)
         {
             sections.forEach(function (hideSectionName)
@@ -48,6 +74,7 @@
         function onLoad()
         {
             showSection("loginSection");
+            setTimeout(patternDictionaryInit, 0);
         }
 
         function doLogin()
@@ -80,11 +107,12 @@
             {
                 (function(theArchive)
                 {
-                    var newChild = document.createElement("DIV");
+                    var newChild = document.createElement("SPAN");
                     newChild.innerText = theArchive;
                     newChild.onclick = function () { doShowArchive(theArchive); };
                     newChild.className = "recentArchiveListEntry";
                     recentlyAccessedSection.appendChild(newChild);
+                    recentlyAccessedSection.appendChild(document.createElement("BR"));
                 })(theArchive);
             };
         }
@@ -96,17 +124,30 @@
             {
                 selectedArchive = NDAarchives[archiveName.substr(0, archiveName.length-crownmailSuffix.length)];
             }
+            document.getElementById('archiveSelectField').value = "";
 
-            if(selectedArchive === undefined)
+            var errorDisplay = document.getElementById("archiveSelectError");
+
+            if (selectedArchive === undefined)
             {
-                document.getElementById("noSuchArchiveError").style.display = "inline";
-                document.getElementById('archiveSelectField').value = "";
+                errorDisplay.style.display = "inline";
+                if (archiveName.indexOf("@") === -1)
+                    errorDisplay.innerText = "Error: Account " + archiveName + crownmailSuffix + " does not exist."
+                else if(archiveName.endsWith(crownmailSuffix))
+                    errorDisplay.innerText = "Error: Account " + archiveName + " does not exist."
+                else
+                    errorDisplay.innerText = "Error: Account " + archiveName + " is not a CrownMail address."
+            }
+            else if (selectedArchive.forbidden === true)
+            {
+                errorDisplay.style.display = "inline";
+                errorDisplay.innerText = "Error: You don't have permission to access " + archiveName + crownmailSuffix+"."
             }
             else
             {
                 // entered a valid archive
                 recentArchives[archiveName] = true;
-                document.getElementById("noSuchArchiveError").style.display = "none";
+                errorDisplay.style.display = "none";
                 showSection("archiveEncryptedSection");
                 document.getElementById("archiveViewMailTitle").innerText = archiveName + crownmailSuffix;
                 var listContainer = document.getElementById("archiveViewListSection");
@@ -148,18 +189,266 @@
             element.className = "selectedMailListEntry";
             selectedMailEntry = element;
             showArchivedMail(element.mailData);
+            selectedKeyPair = element.mailData.keyPairs[0];
         }
 
         function showArchivedMail(mail)
         {
             var mailView = document.getElementById("archiveMailTextView");
-            mailView.innerText = mail.text;
+            removeAllChildren(mailView);
+            var wordStart = -1;
+            if (mail.keyPairs === undefined)
+            {
+                mail.keyPairs = [];
+            }
+
+            for (var segmentIdx = 0; segmentIdx < mail.text.length; ++segmentIdx)
+            {
+                var segment = mail.text[segmentIdx];
+                var keyPair = mail.keyPairs[segmentIdx];
+                if (keyPair === undefined)
+                {
+                    keyPair = { encrypt: generateRandomKey(), decrypt: clearDecryptionKey, undoBuffer: [{ key: clearDecryptionKey }], redoBuffer:[] };
+                    mail.keyPairs[segmentIdx] = keyPair;
+                }
+                for (var Idx = 0; Idx < segment.length; ++Idx)
+                {
+                    var c = segment[Idx];
+                    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == "'" || c == "-")
+                    {
+                        // reading a word
+                        if (wordStart == -1)
+                            wordStart = Idx;
+                    }
+                    else
+                    {
+                        //reading symbols
+                        if (wordStart != -1)
+                        {
+                            addDecryptableWord(segment.substring(wordStart, Idx), keyPair, mailView, mail);
+                            wordStart = -1;
+                        }
+                        addPlainText(c, mailView);
+                    }
+                }
+
+                if (wordStart != -1)
+                {
+                    addDecryptableWord(segment.substring(wordStart, Idx), keyPair, mailView, mail);
+                    wordStart = -1;
+                }
+            }
+            //mailView.innerText = mail.text;
+        }
+
+        function addDecryptableWord(word, keyPair, container, mail)
+        {
+            var wordElement = document.createElement("SPAN");
+            wordElement.className = "decryptWord";
+            var encryptedText = encryptWithKey(word, keyPair.encrypt);
+            var letterCounts = {};
+            var lowercasedText = encryptedText.toLowerCase();
+            for (var Idx = 0; Idx < encryptedText.length; ++Idx)
+            {
+                var c = lowercasedText[Idx];
+                if (letterCounts.hasOwnProperty(c))
+                    letterCounts[c]++;
+                else
+                    letterCounts[c] = 1;
+            }
+            var patternIds = {};
+            var nextPattern = 0;
+            for (var Idx = 0; Idx < encryptedText.length; ++Idx)
+            {
+                var letterElement = document.createElement("SPAN");
+                var cOrig = encryptedText[Idx];
+                letterElement.innerText = cOrig;
+
+                var c = lowercasedText[Idx];
+                var cCode = c.charCodeAt(0);
+                if (cCode < charCode_a || cCode > charCode_z)
+                {
+                    letterElement.className = "decrypted";
+                }
+                else if (keyPair.decrypt[cCode - charCode_a] !== '?')
+                {
+                    letterElement.className = "decrypted";
+                    var cDecrypted = keyPair.decrypt[cCode - charCode_a];
+                    if(cOrig != c)
+                        letterElement.innerText = cDecrypted.toUpperCase();
+                    else
+                        letterElement.innerText = cDecrypted;
+                }
+                else
+                {
+                    if (letterCounts[c] > 1)
+                    {
+                        if (!patternIds.hasOwnProperty(c))
+                        {
+                            patternIds[c] = nextPattern;
+                            nextPattern++;
+                        }
+                        letterElement.className = "decryptPattern" + patternIds[c];
+                    }
+                }
+                wordElement.appendChild(letterElement);
+            }
+            container.appendChild(wordElement);
+
+            wordElement.onclick = function ()
+            {
+                showDecryptSuggestions(this, lowercasedText, keyPair, mail);
+            };
+        }
+
+        function addPlainText(text, container)
+        {
+            var content = document.createTextNode(text);
+            container.appendChild(content);
+        }
+
+        function showDecryptSuggestions(wordElement, encryptedText, keyPair, mail)
+        {
+            var possibleWords = getSuggestions(encryptedText, keyPair.decrypt, 10);
+            var tempNode = document.getElementById("dscryptTemp");
+            removeAllChildren(tempNode);
+            for (var Idx = 0; Idx < possibleWords.length && Idx < 10; ++Idx)
+            {
+                var newChild = document.createElement("DIV");
+                newChild.innerText = possibleWords[Idx];
+                tempNode.appendChild(newChild);
+                newChild.onclick = function (currentWord)
+                {
+                    return function ()
+                    {
+                        applyDecryption(keyPair, encryptedText, currentWord, mail);
+                    }
+                }(possibleWords[Idx]);
+            }
+        }
+
+        function applyDecryption(keyPair, fromWord, toWord, mail)
+        {
+            for(var Idx = 0; Idx < fromWord.length; ++Idx)
+            {
+                var fromC = fromWord[Idx];
+                var toC = toWord[Idx];
+                var cIdx = fromC.charCodeAt(0) - charCode_a;
+                if (cIdx >= 0 && cIdx < keyPair.decrypt.length)
+                {
+                    keyPair.decrypt = keyPair.decrypt.substring(0, cIdx) + toC + keyPair.decrypt.substring(cIdx + 1);
+                }
+            }
+
+            keyPair.undoBuffer.push({ key: selectedKeyPair.decrypt, label:"\""+toWord+"\"" });
+            keyPair.redoBuffer = [];
+
+            var tempNode = document.getElementById("dscryptTemp");
+            removeAllChildren(tempNode);
+
+            updateUndoState();
+            showArchivedMail(mail);
+        }
+
+        function generateRandomKey()
+        {
+            var unused = "abcdefghijklmnopqrstuvwxyz";
+            var result = "";
+            while(unused.length > 0)
+            {
+                var index = Math.floor(Math.random() * unused.length);
+                result += unused[index];
+                unused = unused.substring(0, index) + unused.substring(index + 1);
+            }
+            return result;
+        }
+
+        function encryptWithKey(text, key)
+        {
+            var result = "";
+            for (var Idx = 0; Idx < text.length; ++Idx)
+            {
+                var c = text.charCodeAt(Idx);
+                if (c >= charCode_A && c <= charCode_Z)
+                {
+                    result += key[c - charCode_A].toUpperCase();
+                }
+                else if (c >= charCode_a && c <= charCode_z)
+                {
+                    result += key[c - charCode_a];
+                }
+                else
+                {
+                    result += text[Idx];
+                }
+            }
+            return result;
+        }
+
+        function doUndo() // there is no try
+        {
+            if (selectedKeyPair.undoBuffer.length > 1)
+            {
+                selectedKeyPair.redoBuffer.push(selectedKeyPair.undoBuffer.pop());
+                updateUndoState();
+                showArchivedMail(selectedMailEntry.mailData);
+            }
+        }
+
+        function doRedo()
+        {
+            if (selectedKeyPair.redoBuffer.length > 0)
+            {
+                selectedKeyPair.undoBuffer.push(selectedKeyPair.redoBuffer.pop());
+                updateUndoState();
+                showArchivedMail(selectedMailEntry.mailData);
+            }
+        }
+
+        function doReset()
+        {
+            selectedKeyPair.undoBuffer.push({ key: clearDecryptionKey, label:"reset" });
+            updateUndoState();
+            showArchivedMail(selectedMailEntry.mailData);
+        }
+
+        function updateUndoState()
+        {
+            selectedKeyPair.decrypt = selectedKeyPair.undoBuffer[selectedKeyPair.undoBuffer.length-1].key;
+            var undoButton = document.getElementById("undoButton");
+            if(selectedKeyPair.undoBuffer.length > 1)
+            {
+                undoButton.innerText = "Undo "+selectedKeyPair.undoBuffer[selectedKeyPair.undoBuffer.length-1].label;
+                undoButton.disabled = false;
+            }
+            else
+            {
+                undoButton.innerText = "Undo";
+                undoButton.disabled = true;
+            }
+
+            var redoButton = document.getElementById("redoButton");
+            if(selectedKeyPair.redoBuffer.length > 0)
+            {
+                redoButton.innerText = "Redo "+selectedKeyPair.redoBuffer[selectedKeyPair.redoBuffer.length-1].label;
+                redoButton.disabled = false;
+            }
+            else
+            {
+                redoButton.innerText = "Redo";
+                redoButton.disabled = true;
+            }
         }
     </script>
 </head>
 <body onload="onLoad()">
     <div style="float:right; width:300px; background-color:darkred; color:yellow; height:100%;">
-        dscrypt
+        <h1 style="text-align:center;">dscrypt</h1>
+        <button id="undoButton" onclick="doUndo()">Undo</button>
+        <button id="redoButton" onclick="doRedo()">Redo</button>
+        <button id="resetButton" onclick="doReset()">Reset</button>
+        <div id="dscryptTemp">
+        </div>
     </div>
     <p>
         == chairon.crownmail.grc ==<br>
@@ -182,8 +471,8 @@
         
         <p>
             View archives for what crownmail address?
-            <p class="errorMessage" style="display:none" id="noSuchArchiveError">
-                Error: No such archive.
+            <p class="errorMessage" style="display:none" id="archiveSelectError">
+                Error: An unknown error occurred.
             </p>
             <br>
             <input type="text" id="archiveSelectField" />
