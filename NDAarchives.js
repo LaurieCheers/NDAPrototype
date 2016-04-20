@@ -5,7 +5,7 @@ NDAarchives = {
             "dateTime": "Sun Sep 1st, 11:00AM",
             "subject": "Travel arrangements",
             "address": "robson73@crownmail.grc",
-            "text": ["Will you be coming to the party tonight? If so there's a bus that leaves "+
+            "text": ["Will you be coming to the party tonight? If so there's a 109 bus that leaves "+
             "Old Town at 6:00. Hope to see you there?"]
         },
         {

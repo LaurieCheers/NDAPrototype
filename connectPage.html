@@ -26,8 +26,12 @@
         .decrypted{
             color:black;
         }
-        .decryptWord{
+        .decryptableWord{
             color:#AAAAAA;
+            cursor:pointer;
+        }
+        .decryptableWord:hover{
+            background-color:yellow;
         }
         .decryptPattern0{
             color:#0000FF;
@@ -41,6 +45,20 @@
         .decryptPattern3{
             color:cyan;
         }
+        .decryptSuggestion{
+            color:yellow;
+            background-color:orangered;
+            cursor:pointer;
+            padding:1px;
+        }
+        .decryptSuggestion:hover{
+            color:white;
+            background-color:orange;
+        }
+        .dscryptQuestionMark{
+            background-color:orangered;
+            color:yellow;
+        }
         a{
             color:blue;
             text-decoration:underline;
@@ -48,6 +66,9 @@
         }
         h1{
             font-family:Verdana;
+        }
+        #dscryptAlphabet{
+            font-family:Courier New, Courier, monospace;
         }
     </style>
     <script src="NDAarchives.js"></script>
@@ -59,6 +80,7 @@
         var recentArchives = { "bryce81": true };
         var selectedMailEntry = undefined;
         var selectedKeyPair = undefined;
+        var alphabetString = "abcdefghijklmnopqrstuvwxyz";
         var clearDecryptionKey = "??????????????????????????";
 
         function showSection(sectionName)
@@ -119,17 +141,19 @@
 
         function doShowArchive(archiveName)
         {
-            var selectedArchive = NDAarchives[archiveName];
-            if(selectedArchive === undefined && archiveName.endsWith(crownmailSuffix))
+            var archiveSelectField = document.getElementById("archiveSelectField");
+            archiveSelectField.value = "";
+
+            if (archiveName.endsWith(crownmailSuffix))
             {
-                selectedArchive = NDAarchives[archiveName.substr(0, archiveName.length-crownmailSuffix.length)];
+                archiveName = archiveName.substr(0, archiveName.length - crownmailSuffix.length);
             }
-            document.getElementById('archiveSelectField').value = "";
+            var selectedArchive = NDAarchives[archiveName];
 
             var errorDisplay = document.getElementById("archiveSelectError");
-
             if (selectedArchive === undefined)
             {
+                showSection("archiveSelectSection");
                 errorDisplay.style.display = "inline";
                 if (archiveName.indexOf("@") === -1)
                     errorDisplay.innerText = "Error: Account " + archiveName + crownmailSuffix + " does not exist."
@@ -140,6 +164,7 @@
             }
             else if (selectedArchive.forbidden === true)
             {
+                showSection("archiveSelectSection");
                 errorDisplay.style.display = "inline";
                 errorDisplay.innerText = "Error: You don't have permission to access " + archiveName + crownmailSuffix+"."
             }
@@ -167,6 +192,46 @@
                     newChild.onclick = function () { selectMailEntry(this); };
                     newChild.className = "archiveMailListEntry"
                     newChild.mailData = archivedMail;
+                    if (archivedMail.keyPairs === undefined)
+                    {
+                        archivedMail.keyPairs = [];
+                        for (var segmentIdx = 0; segmentIdx < archivedMail.text.length; ++segmentIdx)
+                        {
+                            var encryptionKey = generateRandomKey();
+                            var text = archivedMail.text[segmentIdx];
+                            var encryptedText = encryptWithKey(text, encryptionKey);
+                            var lettersUsed = {};
+                            for (var Idx = 0; Idx < encryptedText.length; ++Idx)
+                            {
+                                lettersUsed[encryptedText[Idx]] = true;
+                            }
+                            var filteredAlphabet = "";
+                            var initialDecryptionKey = "";
+                            for (var Idx = 0; Idx < alphabetString.length; ++Idx)
+                            {
+                                if (lettersUsed[alphabetString[Idx]])
+                                {
+                                    filteredAlphabet += alphabetString[Idx];
+                                    initialDecryptionKey += "?";
+                                }
+                                else
+                                {
+                                    filteredAlphabet += "-";
+                                    initialDecryptionKey += "-";
+                                }
+                            }
+
+                            var keyPair = {
+                                text: text,
+                                filteredAlphabet: filteredAlphabet,
+                                encrypt: encryptionKey,
+                                decrypt: initialDecryptionKey,
+                                undoBuffer: [{ key: initialDecryptionKey }],
+                                redoBuffer: []
+                            };
+                            archivedMail.keyPairs[segmentIdx] = keyPair;
+                        }
+                    }
                     listContainer.appendChild(newChild);
                 });
 
@@ -188,8 +253,22 @@
                 selectedMailEntry.className = "archiveMailListEntry";
             element.className = "selectedMailListEntry";
             selectedMailEntry = element;
-            showArchivedMail(element.mailData);
             selectedKeyPair = element.mailData.keyPairs[0];
+            updateUndoState();
+            showArchivedMail(element.mailData);
+        }
+
+        function isFullyDecrypted(keyPair)
+        {
+            return keyPair.decrypt.indexOf("?") === -1;
+
+            // fixme: check it's correct
+/*
+            for(var Idx = 0; Idx < keyPair.filteredAlphabet; ++Idx)
+            {
+                var c = keyPair.filteredAlphabet[Idx];
+                
+            }*/
         }
 
         function showArchivedMail(mail)
@@ -197,20 +276,30 @@
             var mailView = document.getElementById("archiveMailTextView");
             removeAllChildren(mailView);
             var wordStart = -1;
-            if (mail.keyPairs === undefined)
-            {
-                mail.keyPairs = [];
-            }
 
-            for (var segmentIdx = 0; segmentIdx < mail.text.length; ++segmentIdx)
+            for (var segmentIdx = 0; segmentIdx < mail.keyPairs.length; ++segmentIdx)
             {
-                var segment = mail.text[segmentIdx];
+
                 var keyPair = mail.keyPairs[segmentIdx];
-                if (keyPair === undefined)
+                var segment = keyPair.text;
+
+                if (isFullyDecrypted(keyPair))
                 {
-                    keyPair = { encrypt: generateRandomKey(), decrypt: clearDecryptionKey, undoBuffer: [{ key: clearDecryptionKey }], redoBuffer:[] };
-                    mail.keyPairs[segmentIdx] = keyPair;
+                    var mailHeaderElement = document.createElement("DIV");
+                    mailHeaderElement.appendChild(document.createTextNode("X-Originating-Email: ["));
+                    var mailLink = document.createElement("A");
+                    mailLink.innerText = mail.address;
+                    mailLink.onclick = function () { doShowArchive(mail.address); };
+                    mailHeaderElement.appendChild(mailLink);
+                    mailHeaderElement.appendChild(document.createTextNode("]"));
+                    mailHeaderElement.appendChild(document.createElement("BR"));
+                    mailHeaderElement.appendChild(document.createTextNode("Received: "+mail.dateTime));
+                    mailView.appendChild(mailHeaderElement);
                 }
+
+                var mailSegmentElement = document.createElement("P");
+                mailView.appendChild(mailSegmentElement);
+
                 for (var Idx = 0; Idx < segment.length; ++Idx)
                 {
                     var c = segment[Idx];
@@ -225,16 +314,16 @@
                         //reading symbols
                         if (wordStart != -1)
                         {
-                            addDecryptableWord(segment.substring(wordStart, Idx), keyPair, mailView, mail);
+                            addDecryptableWord(segment.substring(wordStart, Idx), keyPair, mailSegmentElement, mail);
                             wordStart = -1;
                         }
-                        addPlainText(c, mailView);
+                        addPlainText(c, mailSegmentElement);
                     }
                 }
 
                 if (wordStart != -1)
                 {
-                    addDecryptableWord(segment.substring(wordStart, Idx), keyPair, mailView, mail);
+                    addDecryptableWord(segment.substring(wordStart, Idx), keyPair, mailSegmentElement, mail);
                     wordStart = -1;
                 }
             }
@@ -244,7 +333,7 @@
         function addDecryptableWord(word, keyPair, container, mail)
         {
             var wordElement = document.createElement("SPAN");
-            wordElement.className = "decryptWord";
+            wordElement.className = "decryptableWord";
             var encryptedText = encryptWithKey(word, keyPair.encrypt);
             var letterCounts = {};
             var lowercasedText = encryptedText.toLowerCase();
@@ -315,7 +404,8 @@
             for (var Idx = 0; Idx < possibleWords.length && Idx < 10; ++Idx)
             {
                 var newChild = document.createElement("DIV");
-                newChild.innerText = possibleWords[Idx];
+                newChild.className = "decryptSuggestion";
+                newChild.innerHTML = "&bull; " + possibleWords[Idx];
                 tempNode.appendChild(newChild);
                 newChild.onclick = function (currentWord)
                 {
@@ -352,7 +442,7 @@
 
         function generateRandomKey()
         {
-            var unused = "abcdefghijklmnopqrstuvwxyz";
+            var unused = alphabetString;
             var result = "";
             while(unused.length > 0)
             {
@@ -412,9 +502,54 @@
             showArchivedMail(selectedMailEntry.mailData);
         }
 
+        function cheatDecrypt()
+        {
+            var finishedDecryptionKey = "";
+            for (var Idx = 0; Idx < selectedKeyPair.filteredAlphabet.length; ++Idx)
+            {
+                var encryptedC = selectedKeyPair.filteredAlphabet[Idx];
+                if (encryptedC === "-")
+                {
+                    finishedDecryptionKey += "-";
+                }
+                else
+                {
+                    var decryptIdx = selectedKeyPair.encrypt.indexOf(encryptedC);
+                    if (decryptIdx === -1)
+                        finishedDecryptionKey += "#";
+                    else
+                        finishedDecryptionKey += alphabetString[decryptIdx];
+                }
+            }
+            selectedKeyPair.undoBuffer.push({ key:finishedDecryptionKey, label: "cheat" });
+            updateUndoState();
+            showArchivedMail(selectedMailEntry.mailData);
+        }
+
         function updateUndoState()
         {
-            selectedKeyPair.decrypt = selectedKeyPair.undoBuffer[selectedKeyPair.undoBuffer.length-1].key;
+            selectedKeyPair.decrypt = selectedKeyPair.undoBuffer[selectedKeyPair.undoBuffer.length - 1].key;
+
+            var dscryptAlphabet = document.getElementById("dscryptAlphabet");
+            removeAllChildren(dscryptAlphabet);
+            dscryptAlphabet.appendChild(document.createTextNode(selectedKeyPair.filteredAlphabet));
+            dscryptAlphabet.appendChild(document.createElement("BR"));
+            for (var Idx = 0; Idx < selectedKeyPair.decrypt.length; ++Idx)
+            {
+                var c = selectedKeyPair.decrypt[Idx];
+                if(c === "?")
+                {
+                    var questionNode = document.createElement("SPAN");
+                    questionNode.innerText = c;
+                    questionNode.className = "dscryptQuestionMark";
+                    dscryptAlphabet.appendChild(questionNode);
+                }
+                else
+                {
+                    dscryptAlphabet.appendChild(document.createTextNode(c));
+                }
+            }
+
             var undoButton = document.getElementById("undoButton");
             if(selectedKeyPair.undoBuffer.length > 1)
             {
@@ -442,13 +577,15 @@
     </script>
 </head>
 <body onload="onLoad()">
-    <div style="float:right; width:300px; background-color:darkred; color:yellow; height:100%;">
+    <div style="float:right; width:300px; background-color:darkred; color:yellow; height:100%; padding-left:10px; padding-right:10px;">
         <h1 style="text-align:center;">dscrypt</h1>
         <button id="undoButton" onclick="doUndo()">Undo</button>
         <button id="redoButton" onclick="doRedo()">Redo</button>
         <button id="resetButton" onclick="doReset()">Reset</button>
-        <div id="dscryptTemp">
-        </div>
+        <button onclick="cheatDecrypt()">Cheat:decrypt</button>
+        <div id="dscryptAlphabet"></div>
+        <hr>
+        <div id="dscryptTemp"></div>
     </div>
     <p>
         == chairon.crownmail.grc ==<br>
